@@ -15,39 +15,44 @@ use pocketmine\level\Level;
 use pocketmine\math\Vector3;
 use pocketmine\event\player\PlayerMoveEvent;
 use mazaicrafty\parkour\TimeMeasurement;
+use mazaicrafty\parkour\Main;
+use pocketmine\scheduler\PluginTask;
 
 class Main extends PluginBase implements Listener{
 
     public function onEnable(): void{
-        Server::getInstance()->getPluginManager()->registerEvents(self, self);
-        $this->saveDefaultConfig();
+        Server::getInstance()->getPluginManager()->registerEvents($this, $this);
         $dir = $this->getDataFolder();
-        $this->startPos = new Config($dir, "StartPos", Config::YAML, []);
+        $this->startPos = new Config($dir . "StartPos.yml", Config::YAML);
+        $this->time = new Config($dir . "time.yml", Config::YAML);
     }
 
     public function onInteract(PlayerInteractEvent $event){
         $player = $event->getPlayer();
         $name = $player->getName();
-        if ($event->getBlock()->getId() === 63 || $event->getBlock()->getId() === 68){
-            $sign = $player->getLevel()->getTile($event->getBlock());
-            if (!($sign instanceof Sign)){
-				return;
-			}
-            $player->getLevel()->addSound(new ClickSound($player->getPosition(), [$player]));
-            switch ($sign->getText()->getLine(0)){
-                case "[Start]":
+        //if ($event->getBlock()->getId() === 1){
+            //$sign = $player->getLevel()->getTile($event->getBlock());
+            //if (!($sign instanceof Sign)){
+			//	return;
+			//}
+            //$player->getLevel()->addSound(new ClickSound($player->getPosition(), [$player]));
+            switch ($event->getBlock()->getId()){
+                case 1:
+                $this->removeTime($player);
                 $this->saveStartPos($player);
-                Server::getInstance()->getScheduler()->schedulerDelayedTask(new TimeMeasurement(self, $player), 20);
+                $this->getServer()->getScheduler()->scheduleRepeatingTask(new TimeMeasurement($this, $player), 20);
                 break;
 
-                case "[Finish]":
-                $countTime = TimeMeasurement::stopCount($player);
+                case 2:
+                //$instance = new TimeMeasurement
+                $countTime = TimeMeasurement::getInstance()->stopCount($player);
+                var_dump($countTime);
+                $hms = $this->s2h($countTime);
                 $player->sendMessage(
                     "Your finish time is:\n".
-                    $countTime
+                    $hms
                 );
                 break;
-            }
         }
     }
 
@@ -60,6 +65,30 @@ class Main extends PluginBase implements Listener{
             
         }
     }
+
+    public function s2h(int $seconds){
+        $hours = floor($seconds / 3600);
+        $minutes = floor(($seconds / 60) % 60);
+        $seconds = $seconds % 60;
+        
+        $hms = sprintf("%02d:%02d:%02d", $hours, $minutes, $seconds);
+        return $hms;
+    }
+
+    public function removeTime(Player $player){
+        $this->time->remove($player->getName());
+    }
+
+    public function saveTime(Player $player, int $count){
+        $this->time->set($player->getName(), $count);
+        $this->time->save();
+    }
+
+    public function getTime(Player $player){
+        $data = $this->time->get($player->getName());
+        return $data;
+    }
+
     public function saveStartPos(Player $player){
         $pos = [
             "x" => $player->getX(),
@@ -73,30 +102,37 @@ class Main extends PluginBase implements Listener{
     }
 
     public function getStartPos(Player $player){
-        $data = $this->startPos->exists($player->getName());
+        $data = $this->startPos->get($player->getName());
         return $data;
     }
-
 }
-
-use mazaicrafty\parkour\Main;
-use pocketmine\Player;
-use pocketmine\scheduler\PluginTask;
 
 class TimeMeasurement extends PluginTask{
 
-    public function __construct(Main $main, Player $player){
-        $this->main = $main;
+    private $main;
+    private $player;
+
+    static $instance;
+
+    public function __construct($main, $player){
+        parent::__construct($main);
         $this->player = $player;
+        $this->count = 0;
     }
 
     public function onRun(int $ticks){
         $player = $this->player;
-        $this->count[$player->getName()]++ = 0;
+        $time = $this->count++;
+        $this->getOwner()->saveTime($player, $time);
     }
 
     public function stopCount(Player $player){
-        $this->getHandler()->cancel();
-        return $this->count[$player->getName()];
+        $this->getOwner()->getServer()->getScheduler()->cancelTask($this->getTaskId());
+        $time = $this->getOwner()->getTime($player);
+        return $time;
+    }
+
+    public static function getInstance(){
+        return self::$instance;
     }
 }
