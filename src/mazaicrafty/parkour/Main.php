@@ -77,6 +77,7 @@ class Main extends PluginBase implements Listener{
 
     public function removeTime(Player $player){
         $this->time->remove($player->getName());
+	$this->time->save();
     }
 
     public function saveTime(Player $player, int $count){
